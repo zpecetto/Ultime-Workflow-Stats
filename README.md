@@ -1,4 +1,4 @@
-# Ultime
+# L’ultime workflow de statistiques
 
 Workflow n8n complet de collecte et de synchronisation des loisirs : livres, livres audio, films, séries, jeux vidéo, jeux de société, DVD/Blu-ray et musique. Cet export conserve les 166 nœuds et les branches du workflow fourni, avec les informations personnelles anonymisées.
 
@@ -12,18 +12,48 @@ Workflow n8n complet de collecte et de synchronisation des loisirs : livres, liv
 
 ## Parties du workflow
 
-| Partie | Entrée | Résultat |
-|---|---|---|
-| BD, comics, mangas | Bubblebd / Souhait1 | Collection, souhaits, PAL, pages, prix, poids, bulles lues et classements |
-| Romans | Gleeph1 | Table Roman, prix, pages, genres, auteurs, éditeurs et périodes |
-| Livres audio | Loop Over Items | Table Audible, possession, souhaits et durées |
-| Films et séries | Loop Over Items5 et Loop Over Items6 | Tables Film/Serie, historiques Trakt et statistiques |
-| Jeux vidéo | Edit Fields | Session Loadia, ludothèque, temps de jeu et autres statistiques |
-| Jeux de société | Paramètres MyLudo | Fiches par lots, table, collection, souhaits et statistiques publiques |
-| DVD et Blu-ray | Clear a data table4 | Table DVD, films/séries, supports et prix |
-| Musique | Playlist | Téléchargement MP3, envoi Drive et retrait des éléments traités de la playlist |
+| Partie | Site ou service source | Entrée | Résultat |
+|---|---|---|---|
+| BD, comics, mangas | [Bubble BD](https://www.bubblebd.com/) | Bubblebd / Souhait1 | Collection, souhaits, PAL, pages, prix, poids, bulles lues et classements |
+| Romans | [Gleeph](https://www.gleeph.com/) | Gleeph1 | Table Roman, prix, pages, genres, auteurs, éditeurs et périodes |
+| Livres audio | [Audible France](https://www.audible.fr/), via le service personnalisé `audible-api` | Loop Over Items | Table Audible, possession, souhaits et durées |
+| Films et séries | [Trakt](https://app.trakt.tv/) et son API | Loop Over Items5 et Loop Over Items6 | Tables Film/Serie, historiques Trakt et statistiques |
+| Jeux vidéo | [Loadia](https://loadia.app/) | Edit Fields | Session Loadia, ludothèque, temps de jeu et autres statistiques |
+| Jeux de société | [MyLudo](https://www.myludo.fr/) | Paramètres MyLudo | Fiches par lots, table, collection, souhaits et statistiques publiques |
+| DVD et Blu-ray | [Blu-ray.com](https://www.blu-ray.com/) | Clear a data table4 | Table DVD, films/séries, supports et prix |
+| Musique | YouTube et Google Drive | Playlist | Téléchargement MP3, envoi Drive et retrait des éléments traités de la playlist |
 
 Les nœuds Sheets des différentes parties sont conservés. Les comptages spécifiques Batman, Spider-Man et Star Wars et leurs mappings Sheets ont été retirés. La branche musique utilise une sortie structurée du script pour retrouver le chemin final du MP3.
+
+## API utilisées pour les films et séries
+
+### API Trakt
+
+Le site utilisateur est [app.trakt.tv](https://app.trakt.tv/). Les quatre nœuds HTTP interrogent l’API JSON à l’adresse `https://api.trakt.tv`, avec la version `2` dans les en-têtes.
+
+| Nœud n8n | Requête GET, après l’URL de base | Utilisation dans le workflow |
+|---|---|---|
+| Trakt API - Get Stats | `/users/{username}/stats` | Statistiques globales du profil |
+| Trakt API - Get Stats1 | `/users/{username}/watchlist?extended=full` | Films et séries de la liste à voir |
+| Trakt API - Get Stats2 | `/users/{username}/history/movies?extended=full` | Historique des visionnages de films |
+| Trakt API - Get Stats3 | `/users/{username}/history/episodes?extended=full` | Historique des épisodes vus, ensuite regroupés par série |
+
+Remplacer `YOUR_TRAKT_USERNAME` dans les quatre URL par le nom d’utilisateur Trakt. Les calculs de durée, genres, pays et périodes sont ensuite effectués par les nœuds Code. Les identifiants IMDb, TMDB et TVDB sont des champs des réponses Trakt.
+
+**Clé et authentification :** créer une application depuis votre compte Trakt, puis remplacer `YOUR_TRAKT_API_KEY` par son **Client ID** dans l’en-tête `trakt-api-key`. Les autres en-têtes de l’export sont `trakt-api-version: 2` et `Content-Type: application/json`.
+
+Si l’accès au profil nécessite une autorisation OAuth, configurer les credentials correspondants dans n8n et l’en-tête `Authorization: Bearer <access_token>`. Le Client ID identifie l’application ; le jeton OAuth autorise l’accès au compte. L’export ne contient aucun jeton et n’inclut pas de parcours de connexion ou de renouvellement OAuth.
+
+**Pagination et détails :** les nœuds de liste à voir et d’historique font avancer `page` avec `{{ $pageCount + 1 }}`. Le nœud des épisodes définit aussi `limit=100`. Le paramètre `extended=full` demande les informations détaillées exploitées par les calculs. Vérifier la récupération de toutes les pages lors de la première exécution, notamment sur une grande collection.
+
+Documentation officielle : [API Trakt](https://docs.trakt.tv/), [en-têtes](https://docs.trakt.tv/docs/required-headers) et [authentification / création d’application](https://docs.trakt.tv/reference/auth).
+
+### API de sortie
+
+- **[Google Sheets API](https://developers.google.com/sheets/api)** : les huit nœuds Google Sheets ajoutent ou mettent à jour les lignes de statistiques dans l’onglet `N8N`. Sélectionner les credentials Google Sheets et un document auquel ce compte a accès.
+- **[Telegram Bot API](https://core.telegram.org/bots/api#sendmessage)** : le nœud **Send a text message2** envoie la notification via `sendMessage`. Configurer les credentials du bot et l’identifiant du destinataire.
+
+Les Data Tables sont stockées dans n8n. Le nœud commun **HTTP Request1** contrôle l’accessibilité de votre instance avant la collecte.
 
 ## Démarrage commun
 
@@ -50,6 +80,20 @@ Le nœud **Éteindre Tunnel** est relié à la fin de la branche musique, comme 
 ## Docker et dépendances
 
 Copier `.env.example` vers `.env`, configurer les valeurs puis lancer `docker compose up -d` pour une nouvelle installation. Avec une instance existante, reprendre uniquement les réglages nécessaires. Le volume n8n est créé par défaut ; adapter la déclaration pour réutiliser un volume existant.
+
+Pour installer le dépôt renommé dans le dossier `~/Ultime` attendu par le nœud **Téléchargement Musique** :
+
+```bash
+cd "$HOME"
+git clone https://github.com/zpecetto/Ultime-Workflow-Stats.git Ultime
+cd Ultime
+```
+
+Si le dossier `~/Ultime` existe déjà, conservez-le et mettez à jour son URL distante :
+
+```bash
+git -C "$HOME/Ultime" remote set-url origin https://github.com/zpecetto/Ultime-Workflow-Stats.git
+```
 
 Le compose reprend n8n, Browserless et Ollama. Les réglages de durée d’exécution et les limites mémoire viennent de la configuration fournie. Watchtower est disponible sous le profil optionnel `maintenance`.
 
