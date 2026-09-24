@@ -1,0 +1,7 @@
+.env
+*.cookies
+*cookies.txt
+*auth.json
+ollama_data/
+Musique/
+audible-data/
